@@ -6,7 +6,8 @@ pipeline {
             agent {label 'windows'}
             steps {
                 // Obtener código del repo
-                git 'https://github.com/AsuruDev/jenkinshelloworld.git'
+                git branch: 'feature_fix_coverage',
+                    url: 'https://github.com/AsuruDev/jenkinshelloworld.git'
                 stash name:'code', includes: '**'
             }
         }

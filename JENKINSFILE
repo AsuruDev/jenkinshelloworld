@@ -1,63 +1,140 @@
 pipeline {
-    agent {label 'windows'}
+    agent none
     
      stages {
         stage('Get Code') {
             agent {label 'windows'}
             steps {
                 // Obtener código del repo
-                git 'https://github.com/AsuruDev/jenkinshelloworld.git'
+                git branch: 'feature_fix_coverage',
+                    url: 'https://github.com/AsuruDev/jenkinshelloworld.git'
+                stash name:'code', includes: '**'
             }
         }
 
-    stage('Build') {
-        steps {
-            echo 'Eyyyy, esto es Python. No hay que compilar nada!!!'
-	    echo WORKSPACE
-	    bat 'dir'
-        }
-    }
+    
 
     stage('Tests')
     {
         parallel {
 
-            stage('Unit') {
+            stage('Static') {
+                agent { label 'linux' }
+    
                 steps {
+                    unstash 'code'
+    
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                        bat '''
-                                set PYTHONPATH=%WORKSPACE%
-                                python -m pytest --junitxml=result-unit.xml test\\unit
+    
+                        sh '''
+                            flake8 --exit-zero --format=pylint app>flake8.out
                         '''
+    
+                        recordIssues(
+                            tools: [flake8(name: 'Flake8', pattern: 'flake8.out')],
+                            qualityGates: [
+                                [threshold: 8, type: 'TOTAL', unstable: true],
+                                [threshold: 10, type: 'TOTAL', unstable: false]
+                            ]
+                        )
                     }
                 }
             }
             
-            stage('Rest') {
+            stage('Security'){
+                agent { label 'linux' }
                 steps {
+                    unstash 'code'
+                    
+                    sh '''
+                        bandit --exit-zero -r . -f custom -o bandit.out --msg-template "{abspath}{line}: [{test_id}] {msg}"
+                    '''
+                    recordIssues(
+                            tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')],
+                            qualityGates: [
+                                [threshold: 2, type: 'TOTAL', unstable: true],
+                                [threshold: 4, type: 'TOTAL', unstable: false]
+                            ]
+                        )
+                }
+            }    
+            
+            stage('Unit') {
+                agent { label 'linux' }
+            
+                steps {
+                    unstash name: 'code'
+            
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                        bat '''
-                            set FLASK_APP=app\\api.py
-                            set FLASK_ENV=development
-                        
-                            start /B cmd /c "python -m flask run"
-                            start /B cmd /c "java -jar C:\\Users\\Jehut\\Downloads\\wiremock-standalone-3.13.2.jar --port 9090 --root-dir test\\wiremock"
-                        
-                            timeout /t 5
-                        
-                            set PYTHONPATH=%WORKSPACE%
-                            python -m pytest --junitxml=result-rest.xml test\\rest
+                        sh '''
+                            export PYTHONPATH=$WORKSPACE
+            
+                            coverage run --branch --source=app --omit=app/__init__.py,app/api.py -m pytest test/unit
+                            coverage xml
                         '''
                     }
+            
+                    stash name: 'results-unit', includes: 'result-unit.xml, coverage.xml'
+                }
+            }
+            
+            stage('Rest') {
+                agent {label 'linux'}
+                steps {
+                    unstash name: 'code'
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        //falla porque no tengo wiremock funcionando en este agente.
+                        sh '''
+                            export FLASK_APP=app/api.py
+                            export FLASK_ENV=development
+                            flask run &
+                            export PYTHONPATH=$WORKSPACE
+                            sleep 5
+                            pytest --junitxml=result-rest.xml test/rest
+                        '''
+                        }
+                        stash name: 'results-rest', includes: 'result-rest.xml'
+                    
+                    
                 }    
-            }    
+            }
+            stage ('Coverage'){
+                
+                agent {label 'linux'}
+                
+                steps {
+
+                    unstash name: 'code'
+                    unstash name: 'results-unit'
+            
+                    recordCoverage qualityGates: [[criticality: 'NOTE', integerThreshold: 95, metric: 'LINE', threshold: 95.0], [criticality: 'ERROR', integerThreshold: 85, metric: 'LINE', threshold: 85.0], [criticality: 'NOTE', integerThreshold: 90, metric: 'BRANCH', threshold: 90.0], [criticality: 'ERROR', integerThreshold: 80, metric: 'BRANCH', threshold: 80.0]], tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
+                }
+            }
+            
+            stage ('Performance') {
+                
+                agent {label 'windows'}
+                
+                steps {
+                    
+                    bat '''
+                        
+                        SET FLASK_APP=app/api.py
+                        SET FLASK_ENV=development
+                        
+                        start python -m flask run
+                        timeout /t 5
+                    
+                        
+                        C:\\Users\\Jehut\\Downloads\\apache-jmeter-5.6.3\\apache-jmeter-5.6.3\\bin\\jmeter -n -t test\\jmeter\\CP_1.2.jmx -f -l CP_1.2.jtl
+                    '''
+                    
+                    perfReport sourceDataFiles: 'CP_1.2.jtl'
+                }
+            }
         }
     }
     
-    stage ('Results') {
-        steps {
-            junit 'result*.xml'
-        }
-    }
+    
   }
 }
