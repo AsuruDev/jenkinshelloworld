@@ -22,6 +22,12 @@ pipeline {
     
                 steps {
                     unstash 'code'
+
+                    sh '''
+                        whoami
+                        hostname
+                        pwd
+                    '''
     
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
     
@@ -44,6 +50,12 @@ pipeline {
                 agent { label 'linux' }
                 steps {
                     unstash 'code'
+
+                    sh '''
+                        whoami
+                        hostname
+                        pwd
+                    '''
                     
                     sh '''
                         bandit --exit-zero -r . -f custom -o bandit.out --msg-template "{abspath}{line}: [{test_id}] {msg}"
@@ -63,6 +75,12 @@ pipeline {
             
                 steps {
                     unstash name: 'code'
+
+                    sh '''
+                        whoami
+                        hostname
+                        pwd
+                    '''
             
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                         sh '''
@@ -81,6 +99,11 @@ pipeline {
                 agent {label 'linux'}
                 steps {
                     unstash name: 'code'
+                    sh '''
+                        whoami
+                        hostname
+                        pwd
+                    '''
                     catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                         //falla porque no tengo wiremock funcionando en este agente.
                         sh '''
@@ -105,6 +128,11 @@ pipeline {
 
                     unstash name: 'code'
                     unstash name: 'results-unit'
+                    sh '''
+                        whoami
+                        hostname
+                        pwd
+                    '''
             
                     recordCoverage qualityGates: [[criticality: 'NOTE', integerThreshold: 95, metric: 'LINE', threshold: 95.0], [criticality: 'ERROR', integerThreshold: 85, metric: 'LINE', threshold: 85.0], [criticality: 'NOTE', integerThreshold: 90, metric: 'BRANCH', threshold: 90.0], [criticality: 'ERROR', integerThreshold: 80, metric: 'BRANCH', threshold: 80.0]], tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
                 }
@@ -115,7 +143,11 @@ pipeline {
                 agent {label 'windows'}
                 
                 steps {
-                    
+                    bat '''
+                        whoami
+                        hostname
+                        cd
+                    '''
                     bat '''
                         
                         SET FLASK_APP=app/api.py
